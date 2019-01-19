@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('query').focus();
+
   const formElement = document.querySelector('#form');
   const resultElement = document.querySelector('#result');
   const loadingElement = document.querySelector('#loading');
@@ -51,8 +53,10 @@ document.addEventListener('DOMContentLoaded', function() {
   function generateContent(next) {
     return (...args) =>
       next(...args).then(translation => {
-        console.log(translation);
-        resultElement.innerHTML = convertToHtml(translation);
+        resultElement.innerHTML = '';
+        if (translation) {
+          resultElement.innerHTML = convertToHtml(translation);
+        }
       });
   }
 
@@ -67,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
     return key => {
       if (cache.has(key)) return Promise.resolve(cache.get(key));
       return Promise.resolve(next(key)).then(resp => {
-        cache.set(key, resp);
+        if (resp) cache.set(key, resp);
         return resp;
       });
     };
@@ -83,11 +87,15 @@ document.addEventListener('DOMContentLoaded', function() {
     return (...args) => {
       return next(...args).then(response => {
         const container = response.querySelector('.qdef');
-        return [extractBasic, extractTranslate, extractPluralForm].reduce(
-          (result, current, index) =>
-            Object.assign(result, current(container.children[index])),
-          {}
-        );
+        let result = null;
+        if (container) {
+          result = [extractBasic, extractTranslate, extractVariantForm].reduce(
+            (result, current, index) =>
+              Object.assign(result, current(container.children[index])),
+            {}
+          );
+        }
+        return result;
       });
     };
   }
@@ -116,6 +124,110 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  function extractBasic(doc) {
+    var word = doc.querySelector('#headword').innerText.trim();
+    var hd_p1_1 = doc.querySelector('.hd_p1_1');
+    var lang = hd_p1_1.getAttribute('lang');
+    var pronounceChildren = hd_p1_1.querySelectorAll('div');
+    var pronounces =
+      pronounceChildren.length > 0
+        ? Array.prototype.reduce
+            .call(
+              pronounceChildren,
+              function(result, current, index) {
+                if (index % 2 === 0) {
+                  result.push([current]);
+                } else {
+                  result[result.length - 1].push(current);
+                }
+                return result;
+              },
+              []
+            )
+            .map(function(divs) {
+              var pronounce = {
+                locale: divs[0].innerText,
+              };
+              return pronounce;
+            })
+        : hd_p1_1.innerText;
+    return {
+      word,
+      pronounces,
+      lang,
+    };
+  }
+  
+  function extractTranslate(doc) {
+    return {
+      translates: Array.prototype.map.call(doc.querySelectorAll('li'), item => {
+        return {
+          pos: item.querySelector('.pos').innerText,
+          def: item.querySelector('.def').innerText,
+        };
+      }),
+    };
+  }
+  
+  function extractVariantForm(doc) {
+    const variants = doc.querySelector('.hd_div1 .hd_if');
+    if (!variants) return null;
+    const types = Array.prototype.map.call(
+      variants.querySelectorAll('span'), span => span.innerText
+    );
+    const values = Array.prototype.map.call(
+      variants.querySelectorAll('a'), a => a.innerText
+    );
+    const result = {
+      variants: {
+        types,
+        values,
+      },
+    };
+    return result;
+  }
+
+  function convertToHtml(translation) {
+    let result = '';
+    if (translation.pronounces) {
+      let pronounce = ''
+      if (translation.pronounces instanceof Array) {
+        pronounce = translation.pronounces.map(p => p.locale).join('; ');
+      } else {
+        pronounce = translation.pronounces;
+      }
+      result += `
+      <dl>
+        <dd>${pronounce}</dd>
+      </dl>
+      `;
+    }
+    if (translation.translates) {
+      result += `
+      <dl>
+        ${translation.translates
+          .map(item => `<dd><strong>${item.pos}：</strong>${item.def}</dd>`)
+          .join('\n')}
+      </dl>
+      `;
+    }
+    if (translation.variants) {
+      result += `
+      <dl>
+      `;
+      let i = 0;
+      for (const type of translation.variants.types) {
+        result += `
+        <dd>${type}${translation.variants.values[i++]}</dd>
+        `;
+      }
+      result += `
+      </dl>
+      `;
+    }
+    return result;
+  }
+
   const submitHandler = compose(
     withLastWordNotModified,
     withLoading,
@@ -142,21 +254,6 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-function convertToHtml(translation) {
-  return `
-    <dl>
-      <dt>翻译：</dt>
-      ${translation.translates
-        .map(item => `<dd><strong>${item.pos}：</strong>${item.def}</dd>`)
-        .join('\n')}
-    </dl>
-    <dl>
-        <dt>复数：</dt>
-        <dd>${translation.plural}</dd>
-    </dl>
-  `;
-}
-
 function compose(...fns) {
   const fnList = fns.filter(fn => typeof fn === 'function');
   if (fnList.length === 0)
@@ -164,58 +261,6 @@ function compose(...fns) {
       'Argument error, at least one `function` should be provided'
     );
   return fnList.reduce((f, g) => (...args) => f(g(...args)));
-}
-
-function extractBasic(doc) {
-  var word = doc.querySelector('#headword').innerText.trim();
-  var hd_p1_1 = doc.querySelector('.hd_p1_1');
-  var lang = hd_p1_1.getAttribute('lang');
-  var pronounceChildren = hd_p1_1.querySelectorAll('div');
-  var pronounces =
-    pronounceChildren.length > 0
-      ? Array.prototype.reduce
-          .call(
-            pronounceChildren,
-            function(result, current, index) {
-              if (index % 2 === 0) {
-                result.push([current]);
-              } else {
-                result[result.length - 1].push(current);
-              }
-              return result;
-            },
-            []
-          )
-          .map(function(divs) {
-            var pronounce = {
-              locale: divs[0].innerText,
-            };
-            return pronounce;
-          })
-      : hd_p1_1.innerText;
-  return {
-    word,
-    pronounces,
-    lang,
-  };
-}
-
-function extractTranslate(doc) {
-  return {
-    translates: Array.prototype.map.call(doc.querySelectorAll('li'), item => {
-      return {
-        pos: item.querySelector('.pos').innerText,
-        def: item.querySelector('.def').innerText,
-      };
-    }),
-  };
-}
-
-function extractPluralForm(doc) {
-  const anchor = doc.querySelector('.hd_div1 .hd_if a');
-  return {
-    plural: anchor.innerText,
-  };
 }
 
 /**

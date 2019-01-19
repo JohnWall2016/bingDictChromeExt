@@ -13,6 +13,16 @@
     "default_popup": "popup.html",
     "default_title": "必应词典"
   },
+  "commands": {
+    "_execute_browser_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+D",
+        "linux": "Ctrl+Shift+D",
+        "windows": "Ctrl+Shift+D",
+        "mac": "Ctrl+Shift+D"
+      }
+    }
+  },
   "permissions": ["activeTab", "*://cn.bing.com/dict/search"],
   "content_scripts": [
     {
